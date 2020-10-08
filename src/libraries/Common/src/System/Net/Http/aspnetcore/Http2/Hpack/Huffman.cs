@@ -269,29 +269,29 @@ namespace System.Net.Http.HPack
             (0b11111111_11111111_11111111_11111100, 30)
         };
 
-        private static readonly (int codeLength, int[] codes)[] _decodingTable = new[]
+        private static readonly (int codeLength, int mask, int maxCode, int[] codes)[] _decodingTableOptimized = new[]
         {
-            (5, new[] { 48, 49, 50, 97, 99, 101, 105, 111, 115, 116 }),
-            (6, new[] { 32, 37, 45, 46, 47, 51, 52, 53, 54, 55, 56, 57, 61, 65, 95, 98, 100, 102, 103, 104, 108, 109, 110, 112, 114, 117 }),
-            (7, new[] { 58, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 89, 106, 107, 113, 118, 119, 120, 121, 122 }),
-            (8, new[] { 38, 42, 44, 59, 88, 90 }),
-            (10, new[] { 33, 34, 40, 41, 63 }),
-            (11, new[] { 39, 43, 124 }),
-            (12, new[] { 35, 62 }),
-            (13, new[] { 0, 36, 64, 91, 93, 126 }),
-            (14, new[] { 94, 125 }),
-            (15, new[] { 60, 96, 123 }),
-            (19, new[] { 92, 195, 208 }),
-            (20, new[] { 128, 130, 131, 162, 184, 194, 224, 226 }),
-            (21, new[] { 153, 161, 167, 172, 176, 177, 179, 209, 216, 217, 227, 229, 230 }),
-            (22, new[] { 129, 132, 133, 134, 136, 146, 154, 156, 160, 163, 164, 169, 170, 173, 178, 181, 185, 186, 187, 189, 190, 196, 198, 228, 232, 233 }),
-            (23, new[] { 1, 135, 137, 138, 139, 140, 141, 143, 147, 149, 150, 151, 152, 155, 157, 158, 165, 166, 168, 174, 175, 180, 182, 183, 188, 191, 197, 231, 239 }),
-            (24, new[] { 9, 142, 144, 145, 148, 159, 171, 206, 215, 225, 236, 237 }),
-            (25, new[] { 199, 207, 234, 235 }),
-            (26, new[] { 192, 193, 200, 201, 202, 205, 210, 213, 218, 219, 238, 240, 242, 243, 255 }),
-            (27, new[] { 203, 204, 211, 212, 214, 221, 222, 223, 241, 244, 245, 246, 247, 248, 250, 251, 252, 253, 254 }),
-            (28, new[] { 2, 3, 4, 5, 6, 7, 8, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28, 29, 30, 31, 127, 220, 249 }),
-            (30, new[] { 10, 13, 22, 256 })
+            (5,  0x1f, 10, new[] { 48, 49, 50, 97, 99, 101, 105, 111, 115, 116 }),
+            (6,  0x3f, 46, new[] { 32, 37, 45, 46, 47, 51, 52, 53, 54, 55, 56, 57, 61, 65, 95, 98, 100, 102, 103, 104, 108, 109, 110, 112, 114, 117 }),
+            (7,  0x7f, 124, new[] { 58, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76, 77, 78, 79, 80, 81, 82, 83, 84, 85, 86, 87, 89, 106, 107, 113, 118, 119, 120, 121, 122 }),
+            (8,  0xff, 254, new[] { 38, 42, 44, 59, 88, 90 }),
+            (10, 0x3ff, 1021, new[] { 33, 34, 40, 41, 63 }),
+            (11, 0x7ff, 2045, new[] { 39, 43, 124 }),
+            (12, 0xfff, 4092, new[] { 35, 62 }),
+            (13, 0x1fff, 8190, new[] { 0, 36, 64, 91, 93, 126 }),
+            (14, 0x3fff, 16382, new[] { 94, 125 }),
+            (15, 0x7fff, 32767, new[] { 60, 96, 123 }),
+            (19, 0x7ffff, 524275, new[] { 92, 195, 208 }),
+            (20, 0xfffff, 1048558, new[] { 128, 130, 131, 162, 184, 194, 224, 226 }),
+            (21, 0x1fffff, 2097129, new[] { 153, 161, 167, 172, 176, 177, 179, 209, 216, 217, 227, 229, 230 }),
+            (22, 0x3fffff, 4194284, new[] { 129, 132, 133, 134, 136, 146, 154, 156, 160, 163, 164, 169, 170, 173, 178, 181, 185, 186, 187, 189, 190, 196, 198, 228, 232, 233 }),
+            (23, 0x7fffff, 8388597, new[] { 1, 135, 137, 138, 139, 140, 141, 143, 147, 149, 150, 151, 152, 155, 157, 158, 165, 166, 168, 174, 175, 180, 182, 183, 188, 191, 197, 231, 239 }),
+            (24, 0xffffff, 16777206, new[] { 9, 142, 144, 145, 148, 159, 171, 206, 215, 225, 236, 237 }),
+            (25, 0x1ffffff, 33554416, new[] { 199, 207, 234, 235 }),
+            (26, 0x3ffffff, 67108847, new[] { 192, 193, 200, 201, 202, 205, 210, 213, 218, 219, 238, 240, 242, 243, 255 }),
+            (27, 0x7ffffff, 134217713, new[] { 203, 204, 211, 212, 214, 221, 222, 223, 241, 244, 245, 246, 247, 248, 250, 251, 252, 253, 254 }),
+            (28, 0xfffffff, 268435455, new[] { 2, 3, 4, 5, 6, 7, 8, 11, 12, 14, 15, 16, 17, 18, 19, 20, 21, 23, 24, 25, 26, 27, 28, 29, 30, 31, 127, 220, 249 }),
+            (30, 0x3fffffff, 1073741824, new[] { 10, 13, 22, 256 })
         };
 
         public static (uint encoded, int bitLength) Encode(int data)
@@ -312,64 +312,74 @@ namespace System.Net.Http.HPack
 
             int i = 0;
             int j = 0;
-            int lastDecodedBits = 0;
+            ulong acc = 0;
+            int bitsInAcc = 0;
             while (i < src.Length)
             {
-                // Note that if lastDecodeBits is 3 or more, then we will only get 5 bits (or less)
-                // from src[i]. Thus we need to read 5 bytes here to ensure that we always have
-                // at least 30 bits available for decoding.
-                // TODO https://github.com/dotnet/runtime/issues/1506:
-                // Rework this as part of Huffman perf improvements
-                uint next = (uint)(src[i] << 24 + lastDecodedBits);
-                next |= (i + 1 < src.Length ? (uint)(src[i + 1] << 16 + lastDecodedBits) : 0);
-                next |= (i + 2 < src.Length ? (uint)(src[i + 2] << 8 + lastDecodedBits) : 0);
-                next |= (i + 3 < src.Length ? (uint)(src[i + 3] << lastDecodedBits) : 0);
-                next |= (i + 4 < src.Length ? (uint)(src[i + 4] >> (8 - lastDecodedBits)) : 0);
-
-                uint ones = (uint)(int.MinValue >> (8 - lastDecodedBits - 1));
-                if (i == src.Length - 1 && lastDecodedBits > 0 && (next & ones) == ones)
+                // load data in 64 bit accumulator
+                do
                 {
-                    // The remaining 7 or less bits are all 1, which is padding.
-                    // We specifically check that lastDecodedBits > 0 because padding
-                    // longer than 7 bits should be treated as a decoding error.
-                    // http://httpwg.org/specs/rfc7541.html#rfc.section.5.2
-                    break;
-                }
+                    // load at least 64-7 bits which is > 30 bits of max huffman size
+                    acc <<= 8;
+                    acc |= src[i++];
+                    bitsInAcc += 8;
+                } while (i < src.Length && bitsInAcc + 8 <= 64);
 
-                // The longest possible symbol size is 30 bits. If we're at the last 4 bytes
-                // of the input, we need to make sure we pass the correct number of valid bits
-                // left, otherwise the trailing 0s in next may form a valid symbol.
-                int validBits = Math.Min(30, (8 - lastDecodedBits) + (src.Length - i - 1) * 8);
-                int ch = DecodeValue(next, validBits, out int decodedBits);
-
-                if (ch == -1)
+                // process loaded bits
+                do
                 {
-                    // No valid symbol could be decoded with the bits in next
-                    throw new HuffmanDecodingException(SR.net_http_hpack_huffman_decode_failed);
-                }
-                else if (ch == 256)
-                {
-                    // A Huffman-encoded string literal containing the EOS symbol MUST be treated as a decoding error.
-                    // http://httpwg.org/specs/rfc7541.html#rfc.section.5.2
-                    throw new HuffmanDecodingException(SR.net_http_hpack_huffman_decode_failed);
-                }
+                    // end of input ?
+                    if (i >= src.Length)
+                    {
+                        // at this point we have at least one and all remaining bits loaded in acc and
+                        // we need to check if all of then are ones to detect padding (see bellow)
+                        ulong ones = ulong.MaxValue >> (64 - bitsInAcc);
+                        if ((acc & ones) == ones)
+                        {
+                            if (bitsInAcc <= 7)
+                            {
+                                // The remaining 7 or less bits are all 1, which is padding.
+                                // http://httpwg.org/specs/rfc7541.html#rfc.section.5.2
+                                return j;
+                            }
+                            else
+                            {
+                                // longer than 7 bits should be treated as a decoding error.
+                                // http://httpwg.org/specs/rfc7541.html#rfc.section.5.2
+                                throw new HuffmanDecodingException(SR.net_http_hpack_huffman_decode_failed);
+                            }
+                        }
+                    }
 
-                if (j == dst.Length)
-                {
-                    Array.Resize(ref dstArray, dst.Length * 2);
-                    dst = dstArray;
-                }
+                    uint data = (uint)(bitsInAcc > 32 ? acc >> (bitsInAcc - 32) : acc << (32 - bitsInAcc));
+                    int ch = DecodeValueOptimized(
+                        data,
+                        bitsInAcc,
+                        out int decodedBits);
 
-                dst[j++] = (byte)ch;
+                    if (ch == -1)
+                    {
+                        // No valid symbol could be decoded with the bits in accumulator.
+                        throw new HuffmanDecodingException(SR.net_http_hpack_huffman_decode_failed);
+                    }
+                    else if (ch == 256)
+                    {
+                        // A Huffman-encoded string literal containing the EOS symbol MUST be treated as a decoding error.
+                        // http://httpwg.org/specs/rfc7541.html#rfc.section.5.2
+                        throw new HuffmanDecodingException(SR.net_http_hpack_huffman_decode_failed);
+                    }
 
-                // If we crossed a byte boundary, advance i so we start at the next byte that's not fully decoded.
-                lastDecodedBits += decodedBits;
-                i += lastDecodedBits / 8;
+                    if (j == dst.Length)
+                    {
+                        Array.Resize(ref dstArray, dst.Length * 2);
+                        dst = dstArray;
+                    }
 
-                // Modulo 8 since we only care about how many bits were decoded in the last byte that we processed.
-                lastDecodedBits %= 8;
+                    dst[j++] = (byte)ch;
+
+                    bitsInAcc -= decodedBits;
+                } while (bitsInAcc >= 32 || i >= src.Length && bitsInAcc > 0);
             }
-
             return j;
         }
 
@@ -404,22 +414,11 @@ namespace System.Net.Http.HPack
             // symbol in the list of values associated with bit length b in the decoding table by indexing it
             // with codeMax - v.
 
-            int codeMax = 0;
-
-            for (int i = 0; i < _decodingTable.Length && _decodingTable[i].codeLength <= validBits; i++)
+            for (int i = 0; i < _decodingTableOptimized.Length && _decodingTableOptimized[i].codeLength <= validBits; i++)
             {
-                (int codeLength, int[] codes) = _decodingTable[i];
+                (int codeLength, int mask, int codeMax, int[] codes) = _decodingTableOptimized[i];
 
-                if (i > 0)
-                {
-                    codeMax <<= codeLength - _decodingTable[i - 1].codeLength;
-                }
-
-                codeMax += codes.Length;
-
-                int mask = int.MinValue >> (codeLength - 1);
-                long masked = (data & mask) >> (32 - codeLength);
-
+                long masked = (data >> (32 - codeLength)) & mask;
                 if (masked < codeMax)
                 {
                     decodedBits = codeLength;
