@@ -381,7 +381,7 @@ namespace System.Net.Http.HPack
                 } while (bitsInAcc >= 32 || i >= src.Length && bitsInAcc > 0);
             }
             return j;
-        }
+        }        
 
         /// <summary>
         /// Decodes a single symbol from a 32-bit word.
@@ -429,5 +429,162 @@ namespace System.Net.Http.HPack
             decodedBits = 0;
             return -1;
         }
+
+        /// <summary>
+        /// Decodes a Huffman encoded string from a byte array using lookup table
+        /// </summary>
+        /// <param name="decodingTree">lookup tree where each lookup table has size of 2^lookupBitsCount</param>
+        /// <param name="lookupBitsCount">bits decoded per one lookup</param>
+        /// <param name="src">The source byte array containing the encoded data.</param>
+        /// <param name="dstArray">The destination byte array to store the decoded data.  This may grow if its size is insufficient.</param>
+        /// <returns>The number of decoded symbols.</returns>
+        public static int DecodeByLookupByteArray(ReadOnlySpan<ushort> decodingTree, int lookupBitsCount, ReadOnlySpan<byte> src, ref byte[] dstArray)
+        {
+            // Lookup table value is encoded as either
+            // -----------------------------------------------------------------
+            //  15  14  13  12  11  10   9   8   7   6   5   4   3   2   1   0
+            // +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+            // | 0 |   next lookup table index |            not used           |
+            // +---+---------------------------+-------------------------------+
+            // or
+            // +---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+---+
+            // | 1 |     number of used bits   |              code             |
+            // +---+---------------------------+-------------------------------+
+
+            // bit 15 set indicates the leaf value of decoding tree
+            // For example value 0x8241 means that we have reached end of huffman code
+            // with result byte 0x41 'A' and from lookup bits count only rightmost 2 bites was used
+            // and rest of bits are part of next huffman code
+
+            // bit 15 at 0 indicates that code is not yet decoded and next lookup table index shall be used
+            // for next n bits of huffman code. 0 in 'next lookup table index' is considered as
+            // decoding error - invalid huffman code
+
+            // decodingTree is array of lookup values indexed as [(table_index * 2^n) + n_bits_of_code]
+            // where n is number of bits decoded by one lookup
+
+            Span<byte> dst = dstArray;
+            Debug.Assert(dst != null && dst.Length > 0);
+
+            int i = 0;
+            int j = 0;
+
+            int lookupTableIndex = 0;
+            int indexInLookupTable;
+
+            int indexMask = (1 << lookupBitsCount) - 1;
+
+            uint acc = 0;
+            int bitsInAcc = 0;
+
+            // this flag is true if all so far lookued up bits of current huffman code are ones which identify possible EOF.
+            // EOF, as specified in http://httpwg.org/specs/rfc7541.html#rfc.section.5.2, is 30 bits lenght code consisting of ones
+            bool mayBeEof = true;
+
+            while (i < src.Length || bitsInAcc > 0)
+            {
+                if (i >= src.Length && bitsInAcc > 0)
+                {
+                    // we have now reached 
+                    Debug.Assert(bitsInAcc < lookupBitsCount);
+
+                    // lets check if all remaining bits are ones
+                    int ones = (1 << bitsInAcc) - 1;
+                    if (mayBeEof && (acc & ones) == ones)
+                    {
+                        // Is it a EOF padding http://httpwg.org/specs/rfc7541.html#rfc.section.5.2
+                        return j;
+                    }
+
+                    // fill up to the size of decodingBaseBits for upcoming last lookup
+                    // as lookup table indexes always needs lookupBits of bits
+                    acc <<= lookupBitsCount - bitsInAcc;
+                    indexInLookupTable = (int)(acc & indexMask);
+                    var atIndex = decodingTree[(lookupTableIndex << lookupBitsCount) + indexInLookupTable];
+                    if (atIndex < 0x8000)
+                    {
+                        // no valid symbol could be decoded
+                        // also cover situation when last bits form full 30 bits EOF as table has traverse fro EOF (256) set to 0
+                        throw new HuffmanDecodingException(SR.net_http_hpack_huffman_decode_failed);
+                    }
+
+                    if (j >= dst.Length)
+                    {
+                        Array.Resize(ref dstArray, dst.Length * 2);
+                        dst = dstArray;
+                    }
+
+                    dst[j++] = (byte)(atIndex & 0xff);
+
+                    return j;
+                }
+                else
+                {
+                    // load buffer
+                    byte lastByte;
+                    do
+                    {
+                        acc <<= 8;
+                        acc |= lastByte = src[i++];
+                        bitsInAcc += 8;
+                    } while (i < src.Length && bitsInAcc + 8 <= 32);
+
+                    if (lastByte == 0xff && i >= src.Length && mayBeEof)
+                    {
+                        // if rest in buffer eqauls all ones == possible EOF
+                        if ((acc & ((1 << bitsInAcc) - 1)) == ((1 << bitsInAcc) - 1))
+                        {
+                            //  A padding strictly longer than 7 bits MUST be treated as a decoding error.
+                            // http://httpwg.org/specs/rfc7541.html#rfc.section.5.2
+                            throw new HuffmanDecodingException(SR.net_http_hpack_huffman_decode_failed);
+                        }
+                    }
+                }
+
+                // process buffer
+                do
+                {
+                    indexInLookupTable = (int)(acc >> (bitsInAcc - lookupBitsCount)) & indexMask;
+                    mayBeEof &= (indexInLookupTable ^ indexMask) == 0;
+
+                    var atIndex = decodingTree[(lookupTableIndex<<lookupBitsCount)+indexInLookupTable];
+
+                    if (atIndex >= 0x8000)
+                    {
+                        // found code, TODO: optimize, precheck size, have fast branch for non dst check
+                        if (j >= dst.Length)
+                        {
+                            Array.Resize(ref dstArray, dst.Length * 2);
+                            dst = dstArray;
+                        }
+
+                        dst[j++] = (byte)(atIndex & 0xff);
+
+                        lookupTableIndex = 0;
+                        bitsInAcc -= (atIndex>>8) & 0x7f;
+                        // zero looked up bits means currently looking up code could be EOF
+                        mayBeEof = true;
+                    }
+                    else
+                    {
+                        lookupTableIndex = atIndex >> 8;
+                        if (lookupTableIndex == 0)
+                        {
+                            // no valid symbol could be decoded
+                            throw new HuffmanDecodingException(SR.net_http_hpack_huffman_decode_failed);
+                        }
+                        bitsInAcc -= lookupBitsCount;
+                    }
+                } while (bitsInAcc >= lookupBitsCount);
+            }
+
+            if (!mayBeEof)
+            {
+                // unexpected EOF, we still have some bits left over
+                throw new HuffmanDecodingException(SR.net_http_hpack_huffman_decode_failed);
+            }
+
+            return j;
+        }        
     }
 }
